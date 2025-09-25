@@ -4,7 +4,10 @@
 
 import streamlit as st
 import pandas as pd
+
 import spacy
+nlp = spacy.load("en_core_web_sm")
+
 from spacy.lang.en.stop_words import STOP_WORDS
 from textblob import TextBlob
 
