@@ -4,24 +4,18 @@
 
 import streamlit as st
 import pandas as pd
-import numpy as np
+import spacy
+from spacy.lang.en.stop_words import STOP_WORDS
+from textblob import TextBlob
 import matplotlib.pyplot as plt
 
-try:
-    import spacy
-    from spacy.lang.en.stop_words import STOP_WORDS
-    from textblob import TextBlob
-    from sklearn.model_selection import train_test_split
-    from sklearn.feature_extraction.text import CountVectorizer
-    from sklearn.naive_bayes import MultinomialNB
-    from sklearn.tree import DecisionTreeClassifier
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.svm import SVC
-    from sklearn.metrics import accuracy_score
-except ImportError:
-    st.error("Required libraries not found.")
-    st.markdown("Please ensure all dependencies are listed in your `requirements.txt` file and try again.")
-    st.stop()
+from sklearn.model_selection import train_test_split
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
 
 # ============================
 # Load SpaCy & Globals
@@ -29,12 +23,7 @@ except ImportError:
 @st.cache_resource
 def load_spacy_model():
     """Loads and caches the spacy model for efficiency."""
-    try:
-        return spacy.load("en_core_web_sm")
-    except OSError:
-        st.error("The SpaCy model 'en_core_web_sm' is not installed.")
-        st.info("The `requirements.txt` file should handle this, but if the issue persists, try adding 'en_core_web_sm' separately in your requirements file or installing it manually.")
-        st.stop()
+    return spacy.load("en_core_web_sm")
 
 nlp = load_spacy_model()
 stop_words = STOP_WORDS
@@ -44,41 +33,31 @@ stop_words = STOP_WORDS
 # ============================
 def lexical_preprocess(text):
     """Tokenization + Stopwords removal + Lemmatization"""
-    if pd.isna(text):
-        return ""
-    doc = nlp(str(text).lower())
+    doc = nlp(text.lower())
     tokens = [token.lemma_ for token in doc if token.text not in stop_words and token.is_alpha]
     return " ".join(tokens)
 
 def syntactic_features(text):
     """Part-of-Speech tags"""
-    if pd.isna(text):
-        return ""
-    doc = nlp(str(text))
+    doc = nlp(text)
     pos_tags = " ".join([token.pos_ for token in doc])
     return pos_tags
 
 def semantic_features(text):
     """Sentiment polarity & subjectivity"""
-    if pd.isna(text):
-        return [0.0, 0.0]
-    blob = TextBlob(str(text))
+    blob = TextBlob(text)
     return [blob.sentiment.polarity, blob.sentiment.subjectivity]
 
 def discourse_features(text):
     """Sentence count + first word of each sentence"""
-    if pd.isna(text):
-        return "0"
-    doc = nlp(str(text))
+    doc = nlp(text)
     sentences = [sent.text.strip() for sent in doc.sents]
     return f"{len(sentences)} {' '.join([s.split()[0] for s in sentences if len(s.split()) > 0])}"
 
 pragmatic_words = ["must", "should", "might", "could", "will", "?", "!"]
 def pragmatic_features(text):
     """Counts of modality & special words"""
-    if pd.isna(text):
-        return [0] * len(pragmatic_words)
-    text = str(text).lower()
+    text = text.lower()
     return [text.count(w) for w in pragmatic_words]
 
 # ============================
@@ -123,11 +102,11 @@ with st.sidebar:
 
     if uploaded_file:
         df = pd.read_csv(uploaded_file)
-        
+
         st.header("Select Columns")
         text_col = st.selectbox("Text Column:", df.columns)
         target_col = st.selectbox("Target Column:", df.columns)
-        
+
         st.header("Select NLP Phase")
         phase = st.selectbox("Choose a phase:", [
             "Lexical & Morphological",
@@ -136,7 +115,7 @@ with st.sidebar:
             "Discourse",
             "Pragmatic"
         ])
-        
+
         run_button = st.button("Run Analysis", use_container_width=True, type="primary")
 
 # Main content area
@@ -144,7 +123,7 @@ if uploaded_file:
     # Display data preview in an expander
     with st.expander("Show Data Preview"):
         st.write(df.head())
-    
+
     if run_button:
         st.markdown("## 📊 Analysis Results")
         with st.spinner("Analyzing data and training models..."):
@@ -165,10 +144,10 @@ if uploaded_file:
                     X_features = CountVectorizer().fit_transform(X_processed)
                 elif phase == "Pragmatic":
                     X_features = pd.DataFrame(X.apply(pragmatic_features).tolist(), columns=pragmatic_words)
-                
+
                 # Run all models
                 results = evaluate_models(X_features, y)
-                
+
                 # Convert results to DataFrame
                 results_df = pd.DataFrame(list(results.items()), columns=["Model", "Accuracy"])
                 results_df["Accuracy_float"] = results_df["Accuracy"].str.rstrip('%').astype(float, errors='ignore')
