@@ -173,5 +173,6 @@ try:
     import spacy
 except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "spacy==3.7.2"])
+    subprocess.check_call([sys.executable, "-m", "pip", "install",
+        "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.0/en_core_web_sm-3.7.0-py3-none-any.whl"])
     import spacy
-
