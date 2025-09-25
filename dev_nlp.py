@@ -166,3 +166,12 @@ with st.expander("📂 Upload & Preview Data", expanded=True):
 # Footer
 st.markdown("---")
 st.markdown("<p style='text-align:center;'>Built with ❤️ using Streamlit & NLP</p>", unsafe_allow_html=True)
+
+import subprocess, sys
+
+try:
+    import spacy
+except ImportError:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "spacy==3.7.2"])
+    import spacy
+
