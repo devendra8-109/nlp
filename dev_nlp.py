@@ -1,176 +1,184 @@
 # ============================================
-# 📌 NLP Phases for Fake vs Real Detection
-# Using Naive Bayes at each step - REVISED FOR STANDARD PYTHON
+# 📌 Streamlit NLP Phase-wise with All Models
 # ============================================
 
-# NOTE: The lines starting with '!' have been removed.
-# You must install the required packages in your environment
-# before running this script. Use the 'requirements.txt' file
-# I previously provided with the following command in your terminal:
-# pip install -r requirements.txt
-
+import streamlit as st
 import pandas as pd
-import numpy as np
-import nltk, re, string, spacy
-from nltk.corpus import stopwords
-from nltk.stem import WordNetLemmatizer
+import spacy
+from spacy.lang.en.stop_words import STOP_WORDS
 from textblob import TextBlob
+import matplotlib.pyplot as plt
 
 from sklearn.model_selection import train_test_split
-from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.metrics import accuracy_score, classification_report
-
-# Download NLTK resources
-# This should be done once on a new environment.
-# You can uncomment these lines and run the script once if you haven't.
-# nltk.download('punkt')
-# nltk.download('wordnet')
-# nltk.download('stopwords')
-
-# Load spaCy English model
-# The spacy model must also be downloaded separately.
-# You can do this via: python -m spacy download en_core_web_sm
-# The requirements.txt file will handle this if you have the URL.
-try:
-    nlp = spacy.load("en_core_web_sm")
-except OSError:
-    print("SpaCy model 'en_core_web_sm' not found. Please download it by running 'python -m spacy download en_core_web_sm' in your terminal.")
-    raise
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
+from sklearn.metrics import accuracy_score
 
 # ============================
-# Step 1: Load Dataset
+# Load SpaCy & Globals
 # ============================
-import pandas as pd
+@st.cache_resource
+def load_spacy_model():
+    """Loads and caches the spacy model for efficiency."""
+    return spacy.load("en_core_web_sm")
 
-# The file path is assumed to be correct for your environment.
-# Make sure 'merged_final.csv' is in the same directory as this script.
-try:
-    df = pd.read_csv("merged_final.csv")
-    print("Dataset Shape:", df.shape)
-    print("Columns:", df.columns.tolist())
-    print(df.head())
-except FileNotFoundError:
-    print("Error: 'merged_final.csv' not found.")
-    print("Please make sure the file is in the same directory as this script.")
-    exit()
-
-
-X = df['statement']
-y = df['BinaryTarget']
+nlp = load_spacy_model()
+stop_words = STOP_WORDS
 
 # ============================
-# Helper: Train NB Model
+# Phase Feature Extractors
 # ============================
-def train_nb(X_features, y, name):
-    X_train, X_test, y_train, y_test = train_test_split(X_features, y, test_size=0.2, random_state=42)
-    model = MultinomialNB()
-    model.fit(X_train, y_train)
-    y_pred = model.predict(X_test)
-    acc = accuracy_score(y_test, y_pred)
-    print(f"\n🔹 {name} Accuracy: {acc:.4f}")
-    print(classification_report(y_test, y_pred))
-    return acc
-
-# ============================
-# Phase 1: Lexical & Morphological Analysis
-# (Tokenization + Stopword removal + Lemmatization)
-# ============================
-lemmatizer = WordNetLemmatizer()
-stop_words = set(stopwords.words('english'))
-
 def lexical_preprocess(text):
-    if pd.isna(text):
-        return ""
-    text = str(text).lower()
-    tokens = nltk.word_tokenize(text)
-    tokens = [lemmatizer.lemmatize(w) for w in tokens if w not in stop_words and w not in string.punctuation]
+    """Tokenization + Stopwords removal + Lemmatization"""
+    doc = nlp(text.lower())
+    tokens = [token.lemma_ for token in doc if token.text not in stop_words and token.is_alpha]
     return " ".join(tokens)
 
-X_lexical = X.apply(lexical_preprocess)
-vec_lexical = CountVectorizer().fit_transform(X_lexical)
-acc1 = train_nb(vec_lexical, y, "Lexical & Morphological Analysis")
-
-# ============================
-# Phase 2: Syntactic Analysis (Parsing)
-# (Extract POS tags & dependency relations as features)
-# ============================
 def syntactic_features(text):
-    if pd.isna(text):
-        return ""
-    doc = nlp(str(text))
+    """Part-of-Speech tags"""
+    doc = nlp(text)
     pos_tags = " ".join([token.pos_ for token in doc])
     return pos_tags
 
-X_syntax = X.apply(syntactic_features)
-vec_syntax = CountVectorizer().fit_transform(X_syntax)
-acc2 = train_nb(vec_syntax, y, "Syntactic Analysis")
-
-# ============================
-# Phase 3: Semantic Analysis
-# (Polarity & Subjectivity from TextBlob)
-# ============================
 def semantic_features(text):
-    if pd.isna(text):
-        return f"0.0 0.0"
-    blob = TextBlob(str(text))
-    return f"{blob.sentiment.polarity} {blob.sentiment.subjectivity}"
+    """Sentiment polarity & subjectivity"""
+    blob = TextBlob(text)
+    return [blob.sentiment.polarity, blob.sentiment.subjectivity]
 
-X_semantic = X.apply(semantic_features)
-vec_semantic = TfidfVectorizer().fit_transform(X_semantic)
-acc3 = train_nb(vec_semantic, y, "Semantic Analysis")
-
-# ============================
-# Phase 4: Discourse Integration
-# (Sentence relations, connectives, length features)
-# ============================
 def discourse_features(text):
-    if pd.isna(text):
-        return "0"
-    sentences = nltk.sent_tokenize(str(text))
-    return f"{len(sentences)} {' '.join([s.split()[0] for s in sentences if len(s.split())>0])}"
-
-X_discourse = X.apply(discourse_features)
-vec_discourse = CountVectorizer().fit_transform(X_discourse)
-acc4 = train_nb(vec_discourse, y, "Discourse Integration")
-
-# ============================
-# Phase 5: Pragmatic Analysis
-# (Contextual features: interrogative, exclamatory, modality words)
-# ============================
+    """Sentence count + first word of each sentence"""
+    doc = nlp(text)
+    sentences = [sent.text.strip() for sent in doc.sents]
+    return f"{len(sentences)} {' '.join([s.split()[0] for s in sentences if len(s.split()) > 0])}"
 
 pragmatic_words = ["must", "should", "might", "could", "will", "?", "!"]
-
 def pragmatic_features(text):
-    features = []
-    if pd.isna(text):
-        return ""
-    text_lower = str(text).lower()
-    for w in pragmatic_words:
-        count = text_lower.count(w)
-        if count > 0:
-            features.extend([w] * count)
-    return " ".join(features)
+    """Counts of modality & special words"""
+    text = text.lower()
+    return [text.count(w) for w in pragmatic_words]
 
+# ============================
+# Train & Evaluate All Models
+# ============================
+def evaluate_models(X_features, y):
+    results = {}
+    models = {
+        "Naive Bayes": MultinomialNB(),
+        "Decision Tree": DecisionTreeClassifier(),
+        "Logistic Regression": LogisticRegression(max_iter=200),
+        "SVM": SVC()
+    }
 
-X_pragmatic = X.fillna('').astype(str).apply(pragmatic_features)
-non_empty_idx = X_pragmatic.str.strip() != ''
-X_pragmatic_filtered = X_pragmatic[non_empty_idx]
-y_filtered = y[non_empty_idx]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_features, y, test_size=0.2, random_state=42
+    )
 
-acc5 = 0.0
-if X_pragmatic_filtered.empty:
-    print("No meaningful pragmatic features found for vectorization.")
+    for name, model in models.items():
+        try:
+            model.fit(X_train, y_train)
+            y_pred = model.predict(X_test)
+            acc = accuracy_score(y_test, y_pred) * 100
+            results[name] = f"{round(acc, 2)}%"
+        except Exception as e:
+            results[name] = f"Error: {str(e)}"
+
+    return results
+
+# ============================
+# Streamlit UI
+# ============================
+st.set_page_config(layout="wide")
+
+st.title("NLP Phase-wise Analysis with Model Comparison")
+st.markdown("---")
+
+# Sidebar for file upload and options
+with st.sidebar:
+    st.header("Upload Dataset")
+    uploaded_file = st.file_uploader("Upload a CSV file", type=["csv"])
+
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+
+        st.header("Select Columns")
+        text_col = st.selectbox("Text Column:", df.columns)
+        target_col = st.selectbox("Target Column:", df.columns)
+
+        st.header("Select NLP Phase")
+        phase = st.selectbox("Choose a phase:", [
+            "Lexical & Morphological",
+            "Syntactic",
+            "Semantic",
+            "Discourse",
+            "Pragmatic"
+        ])
+
+        run_button = st.button("Run Analysis", use_container_width=True, type="primary")
+
+# Main content area
+if uploaded_file:
+    # Display data preview in an expander
+    with st.expander("Show Data Preview"):
+        st.write(df.head())
+
+    if run_button:
+        st.markdown("## 📊 Analysis Results")
+        with st.spinner("Analyzing data and training models..."):
+            try:
+                X = df[text_col].astype(str)
+                y = df[target_col]
+
+                if phase == "Lexical & Morphological":
+                    X_processed = X.apply(lexical_preprocess)
+                    X_features = CountVectorizer().fit_transform(X_processed)
+                elif phase == "Syntactic":
+                    X_processed = X.apply(syntactic_features)
+                    X_features = CountVectorizer().fit_transform(X_processed)
+                elif phase == "Semantic":
+                    X_features = pd.DataFrame(X.apply(semantic_features).tolist(), columns=["polarity", "subjectivity"])
+                elif phase == "Discourse":
+                    X_processed = X.apply(discourse_features)
+                    X_features = CountVectorizer().fit_transform(X_processed)
+                elif phase == "Pragmatic":
+                    X_features = pd.DataFrame(X.apply(pragmatic_features).tolist(), columns=pragmatic_words)
+
+                # Run all models
+                results = evaluate_models(X_features, y)
+
+                # Convert results to DataFrame
+                results_df = pd.DataFrame(list(results.items()), columns=["Model", "Accuracy"])
+                results_df["Accuracy_float"] = results_df["Accuracy"].str.rstrip('%').astype(float, errors='ignore')
+                results_df = results_df.sort_values(by="Accuracy_float", ascending=False).reset_index(drop=True)
+
+                # Use Streamlit columns for a better layout
+                col1, col2 = st.columns([1, 1])
+
+                with col1:
+                    st.subheader("Accuracy Table")
+                    st.dataframe(results_df[["Model", "Accuracy"]], use_container_width=True)
+
+                with col2:
+                    st.subheader("Performance Chart")
+                    # Use matplotlib for a custom bar chart with values
+                    fig, ax = plt.subplots(figsize=(6, 4))
+                    ax.bar(results_df["Model"], results_df["Accuracy_float"], color=plt.cm.Paired.colors, zorder=3)
+                    ax.set_ylim(0, 100)
+                    ax.set_ylabel("Accuracy (%)")
+                    ax.set_title(f"Model Performance on {phase} Features")
+                    ax.tick_params(axis='x', rotation=45, labelsize=10)
+                    ax.grid(axis='y', linestyle='--', alpha=0.7, zorder=0)
+
+                    # Add labels on top of bars
+                    for container in ax.containers:
+                        ax.bar_label(container, fmt='%.2f%%')
+
+                    st.pyplot(fig)
+
+            except Exception as e:
+                st.error(f"An error occurred during analysis: {e}")
+                st.info("Please check your selected columns and data for consistency.")
 else:
-    vec_pragmatic = CountVectorizer(stop_words=None).fit_transform(X_pragmatic_filtered)
-    acc5 = train_nb(vec_pragmatic, y_filtered, "Pragmatic Analysis")
-
-# ============================
-# Final Results
-# ============================
-print("\n📊 Phase-wise Naive Bayes Accuracies:")
-print(f"1. Lexical & Morphological: {acc1:.4f}")
-print(f"2. Syntactic: {acc2:.4f}")
-print(f"3. Semantic: {acc3:.4f}")
-print(f"4. Discourse: {acc4:.4f}")
-print(f"5. Pragmatic: {acc5:.4f}")
+    st.info("Please upload a CSV file on the left to begin the analysis.")
